@@ -21,6 +21,8 @@ import org.jetbrains.annotations.NotNull;
 import java.io.IOException;
 import java.util.Set;
 
+import ru.mail.polis.klimova.Service;
+
 /**
  * Constructs {@link KVService} instances.
  *
@@ -54,7 +56,6 @@ final class KVServiceFactory {
             throw new IllegalArgumentException("Port out of range");
         }
 
-        // TODO: Implement me
-        throw new UnsupportedOperationException("Implement me!");
+        return new Service(port, dao, topology);
     }
 }

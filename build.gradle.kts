@@ -11,6 +11,8 @@ repositories {
 }
 
 dependencies {
+    compile("com.h2database:h2:1.4.197")
+
     // Our beloved one-nio
     compile("ru.odnoklassniki:one-nio:1.0.2")
 
