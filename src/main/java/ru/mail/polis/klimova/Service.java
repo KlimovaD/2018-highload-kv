@@ -3,6 +3,7 @@ package ru.mail.polis.klimova;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -102,15 +103,25 @@ public class Service extends HttpServer implements KVService {
         int success = 0;
         int notFound = 0;
         int error = 0;
+        int deleted = 0;
         Map<String, byte[]> values = new HashMap<>();
+        Set<String> deletedValues = new HashSet<>();
+        Map<Long, String> timestamps = new HashMap<>();
 
         for (String host : replicasHosts) {
             if (host.equals(my)) {
                 try {
                     values.put(host, dao.get(id));
+                    timestamps.put(dao.getUpdateTimeMillis(id), host);
                     success++;
                 } catch (NoSuchElementException e) {
-                    notFound++;
+                    try {
+                        timestamps.put(dao.getUpdateTimeMillis(id), host);
+                        deletedValues.add(host);
+                        deleted++;
+                    } catch (Exception e1) {
+                        notFound++;
+                    }
                 } catch (IOException e) {
                     error++;
                     e.printStackTrace();
@@ -121,10 +132,17 @@ public class Service extends HttpServer implements KVService {
                     switch (response.getStatus()) {
                         case 200:
                             values.put(host, response.getBody());
+                            timestamps.put(Long.parseLong(response.getHeader("updated: ")), host);
                             success++;
                             break;
                         case 404:
-                            notFound++;
+                            String updatedString = response.getHeader("updated: ");
+                            if (updatedString == null) {
+                                notFound++;
+                            } else {
+                                timestamps.put(Long.parseLong(updatedString), host);
+                                deleted++;
+                            }
                             break;
                         default:
                             error++;
@@ -137,17 +155,17 @@ public class Service extends HttpServer implements KVService {
             }
         }
 
-        if (values.size() >= replicas.getAck()) {
+        if (values.size() > 0 && deleted == 0) {
             Optional<Map.Entry<String, byte[]>> first = values.entrySet().stream().findFirst();
             if (first.isPresent()) {
                 return Response.ok(first.get().getValue());
             } else {
                 return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
             }
-        } else if (notFound == replicas.getFrom()) {
-            return new Response(Response.NOT_FOUND, Response.EMPTY);
-        } else {
+        } else if (success + deleted + notFound < replicas.getAck()) {
             return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
+        } else {
+            return new Response(Response.NOT_FOUND, Response.EMPTY);
         }
     }
 
@@ -233,14 +251,27 @@ public class Service extends HttpServer implements KVService {
         byte[] id = idParameter.getBytes();
         switch (request.getMethod()) {
             case Request.METHOD_GET:
+                Response response;
                 try {
                     byte[] value = dao.get(id);
-                    return Response.ok(value);
+                    response = Response.ok(value);
                 } catch (NoSuchElementException e) {
-                    return new Response(Response.NOT_FOUND, Response.EMPTY);
+                    response = new Response(Response.NOT_FOUND, Response.EMPTY);
                 } catch (IOException e) {
                     return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
                 }
+                Long updateTime;
+                try {
+                    updateTime = dao.getUpdateTimeMillis(id);
+                } catch (NoSuchElementException e) {
+                    updateTime = null;
+                } catch (IOException e) {
+                    return new Response(Response.INTERNAL_ERROR, Response.EMPTY);
+                }
+                if (updateTime != null) {
+                    response.addHeader("updated: " + updateTime);
+                }
+                return response;
             case Request.METHOD_PUT:
                 try {
                     dao.upsert(id, request.getBody());

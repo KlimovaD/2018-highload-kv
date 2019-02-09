@@ -18,11 +18,20 @@ public class Replicas {
     }
 
     public static Replicas fromQuery(String query) throws IllegalArgumentException {
+        int ack;
+        int from;
         try {
             String[] split = query.split("/");
-            return new Replicas(Integer.parseInt(split[0]), Integer.parseInt(split[1]));
+            ack = Integer.parseInt(split[0]);
+            from = Integer.parseInt(split[1]);
         } catch (Exception e) {
             throw new IllegalArgumentException();
+        }
+
+        if (ack > from || ack < 1) {
+            throw new IllegalArgumentException();
+        } else {
+            return new Replicas(ack, from);
         }
     }
 
